@@ -1,0 +1,2 @@
+repo_url = "https://github.com/Cordeid/devops-fase1.git"
+# allowed_ssh_cidr = "SEU.IP.PUBLICO.AQUI/32"
