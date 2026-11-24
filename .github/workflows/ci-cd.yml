@@ -32,9 +32,9 @@ jobs:
     name: "CI · Lint e testes"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -53,7 +53,7 @@ jobs:
 
       - name: Guardar relatórios de teste
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: relatorios-de-teste
           path: reports/
@@ -62,9 +62,9 @@ jobs:
     name: "CI · Segurança do código (SAST e dependências)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -82,7 +82,7 @@ jobs:
     name: "CI · Validação de IaC (Terraform e Ansible)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: hashicorp/setup-terraform@v3
 
@@ -116,7 +116,7 @@ jobs:
       image: ${{ steps.meta.outputs.image }}
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Definir versão e tags da imagem
         id: meta
@@ -151,7 +151,7 @@ jobs:
           docker logs app | tail -5
 
       - name: Scan de vulnerabilidades da imagem (Trivy) - bloqueia CRITICAL
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}
           severity: CRITICAL
@@ -160,7 +160,7 @@ jobs:
           format: table
 
       - name: Relatório completo do Trivy (HIGH e CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}
           severity: HIGH,CRITICAL
@@ -169,7 +169,7 @@ jobs:
           output: trivy-report.txt
 
       - name: Guardar relatório do Trivy
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: relatorio-trivy
           path: trivy-report.txt
@@ -201,10 +201,10 @@ jobs:
     environment:
       name: homologacao
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Criar cluster Kubernetes temporário (kind)
-        uses: helm/kind-action@v1.10.0
+        uses: helm/kind-action@v1.15.2
         with:
           cluster_name: devops
 
@@ -243,7 +243,7 @@ jobs:
 
       - name: Guardar relatório do ZAP
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: relatorio-zap
           path: zap/
@@ -257,7 +257,7 @@ jobs:
       name: producao
       url: ${{ vars.RENDER_APP_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Conferir configuração do Render
         id: cfg
