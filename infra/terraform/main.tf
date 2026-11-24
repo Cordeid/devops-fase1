@@ -51,7 +51,7 @@ resource "aws_security_group" "app" {
   }
 }
 
-# Servidor da aplicação: instala Docker, clona o repositório e sobe o container
+# Servidor da aplicação: instala Docker e roda a imagem publicada pelo pipeline
 resource "aws_instance" "app" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = var.instance_type
@@ -61,7 +61,7 @@ resource "aws_instance" "app" {
   associate_public_ip_address = true
 
   user_data = templatefile("${path.module}/user_data.sh", {
-    repo_url = var.repo_url
+    app_image = var.app_image
   })
 
   tags = {

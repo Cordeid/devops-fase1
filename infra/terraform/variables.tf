@@ -22,9 +22,10 @@ variable "key_name" {
   default     = "vockey"
 }
 
-variable "repo_url" {
-  description = "URL pública do repositório GitHub com a aplicação"
+variable "app_image" {
+  description = "Imagem Docker publicada pelo pipeline de CD"
   type        = string
+  default     = "ghcr.io/cordeid/devops-fase1:latest"
 }
 
 variable "allowed_ssh_cidr" {

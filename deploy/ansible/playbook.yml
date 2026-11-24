@@ -1,0 +1,63 @@
+# Gerenciamento de configuração do servidor de produção alternativo (EC2 criada pelo Terraform).
+# Instala o Docker, garante o serviço ativo e roda a versão desejada da imagem.
+#
+# Uso:
+#   cp inventory.example.ini inventory.ini   (coloque o IP que o Terraform mostrou)
+#   ansible-playbook -i inventory.ini playbook.yml -e app_image=ghcr.io/cordeid/devops-fase1:sha-abc1234
+- name: Deploy da API de tarefas
+  hosts: app_servers
+  become: true
+  vars:
+    app_image: ghcr.io/cordeid/devops-fase1:latest
+    app_env: production
+    app_port: 5000
+
+  tasks:
+    - name: Instalar Docker e curl
+      ansible.builtin.apt:
+        name: [docker.io, curl]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Garantir que o Docker está ativo e inicia com o sistema
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Baixar a imagem da aplicação
+      ansible.builtin.command: docker pull {{ app_image }}
+      register: pull
+      changed_when: "'Downloaded newer image' in pull.stdout"
+
+    - name: Ver qual imagem está rodando agora
+      ansible.builtin.command: docker inspect --format {{ '{{.Config.Image}}' }} devops-app
+      register: atual
+      failed_when: false
+      changed_when: false
+
+    - name: Substituir o container quando a imagem mudou
+      when: atual.stdout != app_image or pull.changed
+      block:
+        - name: Remover container antigo
+          ansible.builtin.command: docker rm -f devops-app
+          failed_when: false
+          changed_when: true
+
+        - name: Subir container novo
+          ansible.builtin.command: >
+            docker run -d --name devops-app --restart unless-stopped
+            -p {{ app_port }}:5000 -e APP_ENV={{ app_env }}
+            --read-only --tmpfs /tmp --security-opt no-new-privileges
+            {{ app_image }}
+          changed_when: true
+
+    - name: Verificar /health
+      ansible.builtin.uri:
+        url: "http://localhost:{{ app_port }}/health"
+        status_code: 200
+      register: health
+      retries: 10
+      delay: 3
+      until: health.status == 200

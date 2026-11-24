@@ -1,0 +1,66 @@
+# Ambiente completo para rodar localmente ou num servidor com Docker:
+#   app        -> API (imagem publicada pelo pipeline no GitHub Packages)
+#   prometheus -> coleta as métricas de /metrics a cada 15 s
+#   grafana    -> painel com requisições, latência e tarefas
+#
+# Subir:   ./scripts/deploy-compose.sh            (usa a imagem :latest)
+#          APP_IMAGE=ghcr.io/cordeid/devops-fase1:sha-abc1234 ./scripts/deploy-compose.sh
+# Derrubar: docker compose down
+
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/cordeid/devops-fase1:latest}
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    container_name: devops-app
+    environment:
+      APP_ENV: ${APP_ENV:-staging}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: devops-prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: devops-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-troque-esta-senha}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped

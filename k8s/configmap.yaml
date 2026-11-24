@@ -1,0 +1,9 @@
+# Configuração separada da imagem: muda por ambiente sem rebuild
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devops-app-config
+  namespace: devops
+data:
+  APP_ENV: "staging"
+  LOG_LEVEL: "INFO"

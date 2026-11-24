@@ -1,0 +1,285 @@
+# Pipeline de Integração e Entrega Contínua (CI/CD)
+#
+#  CI  ─ testes ─┐
+#      ─ segurança do código ─┼─► CD ─ build/scan/publicação da imagem ─► homologação (Kubernetes) ─► produção (Render)
+#      ─ validação de IaC ─┘
+#
+# Pull requests rodam só a parte de CI e o build (sem publicar nem implantar).
+# Push na main executa o fluxo completo, e a mesma imagem testada vai até produção.
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/cordeid/devops-fase1
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ------------------------------------------------------------------ CI
+  testes:
+    name: "CI · Lint e testes"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (flake8)
+        run: flake8 .
+
+      - name: Testes automatizados com cobertura mínima de 90%
+        run: |
+          mkdir -p reports
+          pytest -v --cov=app --cov-report=term-missing --cov-report=xml:reports/coverage.xml \
+                 --cov-fail-under=90 --junitxml=reports/junit.xml
+
+      - name: Guardar relatórios de teste
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-de-teste
+          path: reports/
+
+  seguranca-codigo:
+    name: "CI · Segurança do código (SAST e dependências)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar ferramentas
+        run: pip install -r requirements-dev.txt
+
+      - name: SAST com Bandit (falhas de segurança no código)
+        run: bandit -r app -ll
+
+      - name: Vulnerabilidades conhecidas nas dependências (pip-audit)
+        run: pip-audit -r requirements.txt
+
+  iac:
+    name: "CI · Validação de IaC (Terraform e Ansible)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: terraform fmt
+        working-directory: infra/terraform
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        working-directory: infra/terraform
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        working-directory: infra/terraform
+        run: terraform validate
+
+      - name: Ansible (sintaxe do playbook)
+        working-directory: deploy/ansible
+        run: |
+          pip install ansible-core
+          ansible-playbook -i inventory.example.ini playbook.yml --syntax-check
+
+  # ------------------------------------------------------------------ CD
+  build:
+    name: "CD · Build, scan e publicação da imagem"
+    needs: [testes, seguranca-codigo, iac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir versão e tags da imagem
+        id: meta
+        run: |
+          VERSION="${GITHUB_SHA::7}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE_NAME}:sha-${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Versão: ${VERSION}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem (multi-stage, usuário não-root)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          build-args: APP_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Teste de integração do container
+        run: |
+          docker run -d --name app -p 5000:5000 --read-only --tmpfs /tmp "${{ steps.meta.outputs.image }}"
+          for _ in $(seq 1 20); do curl -fs http://localhost:5000/health && break; sleep 1; done
+          bash scripts/smoke-test.sh http://localhost:5000 "${{ steps.meta.outputs.version }}"
+          echo "--- Usuário do processo no container:"
+          docker exec app id
+          echo "--- Logs estruturados (JSON):"
+          docker logs app | tail -5
+
+      - name: Scan de vulnerabilidades da imagem (Trivy) - bloqueia CRITICAL
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Relatório completo do Trivy (HIGH e CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          format: table
+          output: trivy-report.txt
+
+      - name: Guardar relatório do Trivy
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-trivy
+          path: trivy-report.txt
+
+      - name: Login no GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publicar a imagem (tag do commit + latest)
+        if: github.event_name != 'pull_request'
+        run: |
+          docker push "${{ steps.meta.outputs.image }}"
+          docker push "${IMAGE_NAME}:latest"
+          echo "### Imagem publicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${{ steps.meta.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  homologacao:
+    name: "CD · Deploy em homologação (Kubernetes)"
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: homologacao
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Criar cluster Kubernetes temporário (kind)
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: devops
+
+      - name: Baixar a imagem publicada e carregar no cluster
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "${{ needs.build.outputs.image }}"
+          kind load docker-image "${{ needs.build.outputs.image }}" --name devops
+
+      - name: Deploy com rolling update e smoke test
+        run: bash scripts/deploy-k8s.sh "${{ needs.build.outputs.image }}" "${{ needs.build.outputs.version }}"
+
+      - name: Estado do cluster e logs da aplicação
+        run: |
+          kubectl -n devops get deploy,rs,pods,svc -o wide
+          echo "--- Últimos logs (JSON) dos pods:"
+          kubectl -n devops logs -l app=devops-app --tail=5 --prefix
+
+      - name: Teste de segurança dinâmico (OWASP ZAP baseline)
+        run: |
+          kubectl -n devops port-forward svc/devops-app 8080:80 >/dev/null 2>&1 &
+          sleep 3
+          mkdir -p zap && chmod 777 zap
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:8080/ -I -r zap-report.html -J zap-report.json
+          python3 - <<'PY'
+          import json
+          dados = json.load(open("zap/zap-report.json"))
+          alertas = [a for s in dados.get("site", []) for a in s.get("alerts", [])]
+          altos = [a for a in alertas if a.get("riskcode") == "3"]
+          print(f"ZAP: {len(alertas)} alertas no total, {len(altos)} de risco alto")
+          for a in alertas:
+              print(f" - [{a.get('riskdesc')}] {a.get('alert')}")
+          raise SystemExit(1 if altos else 0)
+          PY
+
+      - name: Guardar relatório do ZAP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-zap
+          path: zap/
+
+  producao:
+    name: "CD · Deploy em produção (Render)"
+    needs: [build, homologacao]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: producao
+      url: ${{ vars.RENDER_APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir configuração do Render
+        id: cfg
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          APP_URL: ${{ vars.RENDER_APP_URL }}
+        run: |
+          if [ -z "$HOOK" ] || [ -z "$APP_URL" ]; then
+            echo "::warning::Secret RENDER_DEPLOY_HOOK_URL ou variável RENDER_APP_URL não configurados. Deploy em produção ignorado."
+            echo "pronto=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "pronto=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy da imagem homologada e verificação
+        if: steps.cfg.outputs.pronto == 'true'
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_APP_URL: ${{ vars.RENDER_APP_URL }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          bash scripts/deploy-render.sh
+          echo "### Produção atualizada" >> "$GITHUB_STEP_SUMMARY"
+          echo "Versão \`${EXPECTED_VERSION}\` no ar em ${RENDER_APP_URL}" >> "$GITHUB_STEP_SUMMARY"

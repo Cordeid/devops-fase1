@@ -1,10 +1,12 @@
 #!/bin/bash
 set -e
 apt-get update -y
-apt-get install -y docker.io git
+apt-get install -y docker.io curl
 systemctl enable --now docker
 
-git clone ${repo_url} /opt/app
-cd /opt/app
-docker build -t devops-fase1 .
-docker run -d --restart always -p 5000:5000 --name app devops-fase1
+# Roda a mesma imagem que passou pelos testes e pela homologação no pipeline
+docker pull ${app_image}
+docker run -d --name devops-app --restart unless-stopped \
+  -p 5000:5000 -e APP_ENV=production \
+  --read-only --tmpfs /tmp --security-opt no-new-privileges \
+  ${app_image}

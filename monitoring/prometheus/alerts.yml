@@ -1,0 +1,30 @@
+groups:
+  - name: devops-app
+    rules:
+      - alert: AplicacaoFora
+        expr: up{job="devops-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A API não responde ao Prometheus há mais de 1 minuto"
+
+      - alert: TaxaDeErros5xxAlta
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mais de 5% das requisições retornando erro 5xx"
+
+      - alert: LatenciaAlta
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "95% das requisições acima de 500 ms"

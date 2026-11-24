@@ -1,0 +1,18 @@
+# Blueprint do Render (infraestrutura como código da produção).
+# O serviço roda a imagem publicada pelo pipeline; quem dispara cada deploy
+# é o job "Deploy em produção" do GitHub Actions, depois da homologação.
+services:
+  - type: web
+    name: devops-fase1
+    runtime: image
+    image:
+      url: ghcr.io/cordeid/devops-fase1:latest
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
