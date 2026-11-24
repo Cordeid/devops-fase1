@@ -5,6 +5,8 @@
 API de tarefas em Flask usada como base do projeto da disciplina **DevOps na Prática** (PUCRS).
 O foco não é a regra de negócio, e sim o caminho automatizado do commit até a produção.
 
+**Produção:** https://devops-fase1.onrender.com/health (plano gratuito do Render: a primeira requisição após um tempo parado pode levar ~1 min)
+
 | Ambiente | Onde roda | Como chega lá |
 |---|---|---|
 | Homologação | Kubernetes temporário (kind) dentro do GitHub Actions | Automático a cada push na `main` |
