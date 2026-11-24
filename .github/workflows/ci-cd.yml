@@ -32,7 +32,7 @@ jobs:
     name: "CI · Lint e testes"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -62,7 +62,7 @@ jobs:
     name: "CI · Segurança do código (SAST e dependências)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -82,7 +82,7 @@ jobs:
     name: "CI · Validação de IaC (Terraform e Ansible)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v3
 
@@ -116,7 +116,7 @@ jobs:
       image: ${{ steps.meta.outputs.image }}
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Definir versão e tags da imagem
         id: meta
@@ -201,7 +201,7 @@ jobs:
     environment:
       name: homologacao
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Criar cluster Kubernetes temporário (kind)
         uses: helm/kind-action@v1.15.2
@@ -257,7 +257,7 @@ jobs:
       name: producao
       url: ${{ vars.RENDER_APP_URL }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Conferir configuração do Render
         id: cfg
