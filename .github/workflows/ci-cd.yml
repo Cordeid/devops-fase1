@@ -151,7 +151,7 @@ jobs:
           docker logs app | tail -5
 
       - name: Scan de vulnerabilidades da imagem (Trivy) - bloqueia CRITICAL
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}
           severity: CRITICAL
@@ -160,7 +160,7 @@ jobs:
           format: table
 
       - name: Relatório completo do Trivy (HIGH e CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ steps.meta.outputs.image }}
           severity: HIGH,CRITICAL
