@@ -29,15 +29,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_ENV=production \
     PORT=5000
 
-# Usuário sem privilégios: o container nunca roda como root
-RUN groupadd --system app && useradd --system --gid app --no-create-home app
+# Usuário sem privilégios com UID fixo: o container nunca roda como root
+# (UID numérico permite ao Kubernetes validar o runAsNonRoot)
+RUN groupadd --system --gid 10001 app \
+ && useradd --system --uid 10001 --gid 10001 --no-create-home app
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=app:app app ./app
 COPY --chown=app:app wsgi.py .
 
-USER app
+USER 10001:10001
 EXPOSE 5000
 
 # O Docker marca o container como "unhealthy" se /health parar de responder

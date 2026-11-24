@@ -15,17 +15,19 @@ DEPLOYMENT="devops-app"
 LOCAL_PORT="${LOCAL_PORT:-8080}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "==> Aplicando manifests (namespace, configmap, deployment, service)"
+echo "==> Aplicando manifests (namespace, configmap, service)"
 kubectl apply -f "${DIR}/k8s/namespace.yaml"
-kubectl apply -f "${DIR}/k8s/configmap.yaml" -f "${DIR}/k8s/deployment.yaml" -f "${DIR}/k8s/service.yaml"
+kubectl apply -f "${DIR}/k8s/configmap.yaml" -f "${DIR}/k8s/service.yaml"
 
 if kubectl get apiservice v1beta1.metrics.k8s.io >/dev/null 2>&1; then
   echo "==> metrics-server encontrado: aplicando autoscaling (HPA)"
   kubectl apply -f "${DIR}/k8s/hpa.yaml"
 fi
 
-echo "==> Atualizando a imagem para ${IMAGE}"
-kubectl -n "${NAMESPACE}" set image "deployment/${DEPLOYMENT}" app="${IMAGE}"
+echo "==> Aplicando o Deployment com a imagem ${IMAGE}"
+# O manifest traz a imagem :latest; aqui ela é trocada pela tag exata do commit
+sed "s#image: ghcr.io/cordeid/devops-fase1:latest#image: ${IMAGE}#" "${DIR}/k8s/deployment.yaml" \
+  | kubectl apply -f -
 kubectl -n "${NAMESPACE}" annotate "deployment/${DEPLOYMENT}" \
   kubernetes.io/change-cause="deploy ${IMAGE}" --overwrite
 
